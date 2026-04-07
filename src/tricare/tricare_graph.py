@@ -121,7 +121,9 @@ def clarify_node(state: TriCareState) -> dict:
     plan_tier = extracted['plan_tier'] or state.get('plan_tier')
     region    = extracted['region']    or state.get('region')
     conv_hist = _build_conv_history(state['messages'])
-
+    language_code   = detect_language(last_user_msg)
+    answer_language = LANGUAGE_NAME_MAP.get(language_code, 'English')
+    
     clarify_prompt = (
         "You are a TRICARE insurance chatbot assistant.\n"
         "Decide if the user's question has enough info to search TRICARE documents.\n\n"
@@ -135,7 +137,7 @@ def clarify_node(state: TriCareState) -> dict:
         "- Clear enough to search → sufficient\n\n"
         'Respond ONLY in JSON:\n'
         '{"needs_clarification": true/false, '
-        '"follow_up_question": "한국어 질문 (needs_clarification=true일 때만)"}'
+        f'"follow_up_question": "follow-up question in {answer_language} (only when needs_clarification=true)"}}'
     )
 
     try:
