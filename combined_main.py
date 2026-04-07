@@ -1,6 +1,6 @@
 """
 Insurance_Benefit_Chatbot/main.py
-실행: streamlit run main.py
+실행: streamlit run combined_main.py
 """
 import os
 import uuid
@@ -80,12 +80,17 @@ if prompt := st.chat_input("질문을 입력하세요..."):
             config = {"configurable": {"thread_id": st.session_state[thread_key]}}
 
             snapshot  = bot.get_state(config)
-            prev_plan = snapshot.values.get("plan_or_intent") if snapshot.values else None
-
+            prev_vals = snapshot.values if snapshot.values else {}
+            
             result = bot.invoke(
                 {
                     "messages":       [HumanMessage(content=prompt)],
-                    "plan_or_intent": prev_plan,
+                    "plan_or_intent": prev_vals.get("plan_or_intent"),
+                    "known_treatment": prev_vals.get("known_treatment"),
+                    "slots":          prev_vals.get("slots", {}),
+                    "extra":          prev_vals.get("extra", {}),
+                    "followup_count": prev_vals.get("followup_count", 0),
+                    "max_followups":  prev_vals.get("max_followups") or 2,
                 },
                 config=config
             )

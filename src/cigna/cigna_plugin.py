@@ -145,6 +145,7 @@ Use medical knowledge to interpret any natural language description of symptoms 
 - If plan unknown → needs_clarification=true, ask ONLY for plan
 - If plan known → needs_clarification=false, generate english_query
 - Never re-ask something already known
+- clarification_message MUST be in the SAME language as the user message
 
 Return STRICT JSON only:
 {{
