@@ -1,120 +1,190 @@
-import sys
+"""
+tricare_plugin.py
+TRICARE 전용 플러그인 — intent/region 기반 분석 + Hybrid+Rerank 검색
+tricare_core.py의 함수들을 그대로 활용
+"""
 import json
+import re
+import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any
-from langchain_chroma import Chroma
-from langchain_community.retrievers import BM25Retriever
+from typing import Optional, List
+
 from langchain_core.documents import Document
-from sentence_transformers import CrossEncoder
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / 'src' / 'shared'))
-
+sys.path.insert(0, str(ROOT / 'src' / 'tricare'))
 from insurance_plugin import InsurancePlugin
-from shared_embedding import get_embedding_model
 
-# [Source 15 반영] OCONUS 및 Medicare 관련 전문 지침 강화
-TRICARE_PROMPT = """You are a TRICARE health benefits specialist.
-This system is designed for OCONUS beneficiaries, primarily Korean residents and USFK (주한미군) personnel.
+from tricare_core import (
+    load_vector_stores,
+    search,
+    detect_language,
+    normalize_question as tricare_normalize,
+)
 
-[IMPORTANT OCONUS & MEDICARE RULES]
-- 해외(South Korea 포함)에서는 TRICARE가 Medicare보다 우선 결제자(Primary Payer)입니다.
-- Medicare는 해외 의료비를 보장하지 않습니다. (Medicare does NOT cover overseas medical expenses)
-- 해외 청구는 먼저 본인이 지불(Pay-up-front)한 후 3년 이내에 청구해야 합니다.
-- 해외 거주자도 Medicare Part B를 활성 상태로 유지해야 TRICARE For Life 혜택을 유지할 수 있습니다.
+RECOMMENDATION_KEYWORDS = [
+    "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
+    "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+]
 
-[답변 구성 원칙][cite: 14]
-- 보장 여부 → 전제조건 → 비용(Group A/B 구분) → 절차 → 출처 순서로 답변하세요.
-- 용어 고정: 본인부담금(Copay), 공제액(Deductible), 사전승인(Prior Authorization).
-- 문서에 없는 내용은 "해당 내용은 제공된 문서에서 확인되지 않습니다."라고 답변하세요.[cite: 15]
+TRICARE_SYSTEM_PROMPT = """당신은 TRICARE 군인 의료보험 전문 안내 어시스턴트입니다.
+
+[주요 플랜]
+- TRICARE Prime / Select / For Life (TFL)
+- TRICARE Overseas Program (TOP)
+- TRICARE Reserve Select / Retired Reserve
+
+[OCONUS 핵심 규칙]
+- 한국(주한미군 포함): TRICARE가 1차 보험 (Medicare 아님)
+- Medicare는 해외 의료비 미적용
+- 해외 청구: 선불 후 3년 이내 청구
+- Medicare Part B 가입 유지 필요
+
+[답변 규칙]
+1. 반드시 [참조 문서]의 내용에만 근거하여 답변하세요.
+2. Group A/B, 플랜 유형, 수혜자 신분을 관련 시 명시하세요.
+3. 모든 문장 끝에 (출처: 파일명, p.번호)를 명시하세요.
+4. 보험 추천은 절대 하지 마세요.
+5. 문서에 없으면 "해당 내용은 제공된 문서에서 확인되지 않습니다"라고 하세요.
+
+[용어 고정]
+- 본인부담금(Copay), 공제액(Deductible), 사전승인(Prior Authorization)
 """
+
+PLAN_ALIASES = {
+    "prime":      "Prime",
+    "프라임":      "Prime",
+    "select":     "Select",
+    "셀렉트":      "Select",
+    "tfl":        "TFL",
+    "for life":   "TFL",
+    "top":        "TOP",
+    "overseas":   "TOP",
+    "reserve":    "Reserve Select",
+}
+
+# TRICARE는 플랜보다 intent + region이 더 중요
+MISSING_REGION_INTENTS = ["cost", "coverage", "overseas"]
+
 
 class TriCarePlugin(InsurancePlugin):
 
     def __init__(self):
-        emb = get_embedding_model()
-        
-        # 1. 벡터 DB 로드 (텍스트 및 비용 테이블)
-        self._text_db = Chroma(
-            collection_name='tricare_rag',
-            embedding_function=emb,
-            persist_directory=str(ROOT / 'vectordb' / 'tricare_text')
-        )
-        self._table_db = Chroma(
-            collection_name='tricare_cost_tables',
-            embedding_function=emb,
-            persist_directory=str(ROOT / 'vectordb' / 'tricare_table')
-        )
-        
-        # 2. 고성능 재랭커 로드 (Source 15 기준)[cite: 15]
-        self._reranker = CrossEncoder('BAAI/bge-reranker-v2-m3')
-        
-        # 3. BM25 인덱스 구축 (전체 텍스트 청크 대상)[cite: 15]
-        self._text_chunks = self._load_all_docs(self._text_db)
-        if self._text_chunks:
-            self._bm25 = BM25Retriever.from_documents(self._text_chunks, k=6)
-        else:
-            self._bm25 = None
-
-        print(f"✅ TriCare 업그레이드 완료 (텍스트: {len(self._text_chunks)}개 / 표: {self._table_db._collection.count()}개)")
+        load_vector_stores()
+        self._analyzer_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+        print("✅ TRICARE DB 로드 완료")
 
     @property
-    def name(self) -> str: return "TriCare"
+    def name(self) -> str:
+        return "TRICARE"
 
     @property
-    def system_prompt(self) -> str: return TRICARE_PROMPT
+    def plans(self) -> List[str]:
+        return ["Prime", "Select", "TFL", "TOP", "Reserve Select", "Retired Reserve"]
 
-    def retrieve(self, query: str, normalized: dict, plan_or_intent: Optional[str]) -> List[Document]:
-        intent = normalized.get('intent', 'general')
-        region = normalized.get('region', 'unknown')
-        
-        # 1. 리전 필터 구성 (Source 14 방식 유지)[cite: 14]
-        region_filter = self._build_region_filter(region)
-        
-        # 2. MMR 검색 (다양성 확보)[cite: 15]
-        # 의도가 '비용'이나 '약국'인 경우 테이블 DB 가중치 증가
-        if intent in ('cost', 'pharmacy'):
-            table_docs = self._table_db.similarity_search(query, k=10)
-            text_docs = self._text_db.max_marginal_relevance_search(query, k=5, fetch_k=20, filter=region_filter)
-        else:
-            text_docs = self._text_db.max_marginal_relevance_search(query, k=10, fetch_k=30, filter=region_filter)
-            table_docs = self._table_db.similarity_search(query, k=5)
+    @property
+    def system_prompt(self) -> str:
+        return TRICARE_SYSTEM_PROMPT
 
-        # 3. BM25 키워드 검색 결합[cite: 15]
-        bm25_docs = self._bm25.invoke(query) if self._bm25 else []
-        
-        # 4. RRF(Reciprocal Rank Fusion) 하이브리드 병합[cite: 15]
-        candidates = self._rrf_merge([text_docs, table_docs, bm25_docs])
-        
-        # 5. [중요] search_tags 제거 후 CrossEncoder 재랭킹[cite: 15]
-        if not candidates: return []
-        
-        refined_pairs = []
-        for d in candidates:
-            content = d.page_content
-            if '[search_tags]' in content:
-                content = content.split('[search_tags]')[0].strip() # 검색용 태그 제거 후 순수 본문으로만 평가
-            refined_pairs.append((query, content))
-            
-        scores = self._reranker.predict(refined_pairs)
-        ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
-        
-        return [doc for _, doc in ranked[:8]]
+    def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
+        state = state or {}
 
-    def _load_all_docs(self, db: Chroma) -> List[Document]:
-        raw = db.get(include=['documents', 'metadatas'])
-        return [Document(page_content=doc, metadata=meta) for doc, meta in zip(raw['documents'], raw['metadatas'])]
+        # [PRIORITY 0] 추천 방어
+        if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
+            return {
+                "language": "ko",
+                "plan_or_intent": state.get("plan_or_intent"),
+                "known_treatment": state.get("known_treatment"),
+                "english_query": "",
+                "needs_clarification": True,
+                "clarification_message": (
+                    "보험 추천은 법적으로 제공이 불가하며, "
+                    "가입하신 플랜의 보장 내용만 안내 가능합니다."
+                ),
+                "extra": {},
+            }
 
-    def _build_region_filter(self, region: str) -> Optional[dict]:
-        if region in ('unknown', 'CONUS', ''): return None
-        if region in ('OCONUS', 'korea'): return {"location": {"$in": ["OCONUS", "BOTH"]}}
-        return None
+        known_plan   = state.get("plan_or_intent")
+        known_region = state.get("extra", {}).get("region")
 
-    def _rrf_merge(self, doc_lists, k=60) -> List[Document]:
-        score_map = {}
-        for docs in doc_lists:
-            for rank, doc in enumerate(docs):
-                key = doc.page_content[:100]
-                if key not in score_map: score_map[key] = {'score': 0.0, 'doc': doc}
-                score_map[key]['score'] += 1.0 / (rank + k)
-        return [v['doc'] for v in sorted(score_map.values(), key=lambda x: x['score'], reverse=True)]
+        prompt = f"""You are a TRICARE insurance query analyzer.
+
+[ALREADY KNOWN FROM STATE - DO NOT RE-ASK]
+- known_plan: {known_plan or "unknown"}
+- known_region: {known_region or "unknown"}
+- known_treatment: {state.get("known_treatment", "unknown")}
+
+[CONVERSATION CONTEXT]
+{context_str}
+
+[CURRENT USER MESSAGE]
+{question}
+
+[PLAN LIST] Prime / Select / TFL / TOP / Reserve Select / Retired Reserve
+Extract plan from casual Korean too: "프라임이야" → Prime
+
+[REGION] CONUS / OCONUS / korea / unknown
+- "한국", "주한미군", "korea", "usfk" → korea
+- "해외", "overseas", "oconus" → OCONUS
+- "미국", "conus" → CONUS
+
+[INTENT] coverage / eligibility / cost / pharmacy / dental / overseas / general
+
+[TREATMENT EXTRACTION]
+Use medical knowledge to interpret natural language symptoms or injuries.
+
+[RULES]
+- TRICARE는 플랜보다 intent + region이 더 중요합니다
+- Plan unknown은 괜찮지만 intent는 반드시 추출
+- region이 overseas/cost 관련인데 unknown이면 needs_clarification=true
+
+Return STRICT JSON only:
+{{
+  "language": "ko|en|ja|zh",
+  "plan_or_intent": "plan name or null",
+  "known_treatment": "english medical term or null",
+  "intent": "coverage|eligibility|cost|pharmacy|dental|overseas|general",
+  "region": "CONUS|OCONUS|korea|unknown",
+  "english_query": "search query or empty string",
+  "needs_clarification": true | false,
+  "clarification_message": "question or empty string"
+}}"""
+
+        raw = self._analyzer_llm.invoke([HumanMessage(content=prompt)]).content
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        analysis = json.loads(match.group(0)) if match else {}
+
+        # plan 누적
+        new_plan = analysis.get("plan_or_intent")
+        plan = new_plan if new_plan and new_plan != "None" else known_plan
+        if plan:
+            plan = PLAN_ALIASES.get(plan.lower(), plan)
+
+        # treatment 누적
+        new_treatment = analysis.get("known_treatment")
+        treatment = new_treatment if new_treatment and new_treatment != "None" else state.get("known_treatment")
+
+        # region 누적
+        region = analysis.get("region", "unknown")
+        if region == "unknown" and known_region:
+            region = known_region
+
+        return {
+            "language":             analysis.get("language", detect_language(question)),
+            "plan_or_intent":       plan,
+            "known_treatment":      treatment,
+            "english_query":        analysis.get("english_query", ""),
+            "needs_clarification":  analysis.get("needs_clarification", False),
+            "clarification_message": analysis.get("clarification_message", ""),
+            "extra": {
+                "intent": analysis.get("intent", "general"),
+                "region": region,
+            },
+        }
+
+    def retrieve(self, query: str, normalized: dict, plan_or_intent: Optional[str], **kwargs) -> List[Document]:
+        # tricare_core.search = Hybrid + Rerank 한 번에 처리
+        return search(query)

@@ -22,18 +22,22 @@ class InsuranceState(TypedDict):
     retrieved_docs:   List[str]
     current_question: str
     clarification_msg: str 
+    known_treatment: Optional[str]
+    slots:             Dict[str, Any]   # Allianz slot 시스템용
+    followup_count:    int              # followup 횟수 추적
+    max_followups:     int              # 최대 followup 허용 수
+    extra:             Dict[str, Any]   # 보험사별 추가 데이터
 
 
 class InsuranceRAGGraph:
 
     def __init__(self, plugin: InsurancePlugin, model_name: str = "gpt-4o-mini"):
         self.plugin       = plugin
-        self.analyzer_llm = ChatOpenAI(model=model_name, temperature=0)
         self.chat_llm     = ChatOpenAI(model=model_name, temperature=0.1)
 
     def analyze_node(self, state: InsuranceState) -> dict:
         messages = state['messages']
-        question = messages[-1].content  # 🚨 변수명 수정 및 통일
+        question = messages[-1].content
 
         history = []
         for m in messages[:-1]:
@@ -41,81 +45,62 @@ class InsuranceRAGGraph:
             history.append(f"{role}: {m.content}")
         context_str = "\n".join(history[-5:])
 
-        # insurance_rag.py 내 analyze_node 프롬프트 전면 수정
+        # ── 각 플러그인의 analyze() 호출 ──────────────────────────
+        analysis = self.plugin.analyze(
+            question=question,
+            context_str=context_str,
+            state={
+                "plan_or_intent":    state.get("plan_or_intent"),
+                "known_treatment":   state.get("known_treatment"),
+                "slots":             state.get("slots", {}),
+                "needs_clarification": False,
+                "clarification_message": state.get("clarification_msg", ""),
+                "followup_count":    state.get("followup_count", 0),
+                "max_followups":     state.get("max_followups", 2),
+                "extra":             state.get("extra", {}),
+            }
+        )
 
-        prompt = f"""You are an insurance query analyzer for {self.plugin.name}.
+        # plan / treatment 누적 (플러그인이 이미 처리했지만 state 반영)
+        final_plan      = analysis.get("plan_or_intent")
+        final_treatment = analysis.get("known_treatment")
 
-        [ABSOLUTE CRITICAL RULES - DO NOT IGNORE]
-        1. STRICT BAN ON RECOMMENDATIONS (보험 추천 절대 금지): 
-           - If the user asks for a plan recommendation or subjective comparison (e.g., "어떤 플랜이 좋나요?", "추천해주세요", "A랑 B중 뭐가 나아요?"), 
-           - You MUST set "needs_clarification" to true.
-           - Write a polite refusal in "clarification_message" (e.g., "저는 특정 보험 상품의 가입을 추천하거나 주관적인 비교를 해드릴 수 없습니다. 원하시는 플랜의 객관적인 보장 내용이나 약관 정보만 확인해 드릴 수 있습니다. 어떤 플랜에 대해 알아보고 싶으신가요?").
-           - Set "english_query" to "". (Do not search).
-        
-        2. PLAN TIER IS MANDATORY (정보 일관성을 위한 플랜 확인 필수): 
-           - To ensure information consistency, you MUST know the user's exact 'plan_tier' (e.g., Premier, Select, IHHP, MajorMedical) before searching.
-           - IF PLAN IS MISSING (and it's not a recommendation request): 
-             * Set "needs_clarification" to true.
-             * Set "english_query" to "". (Do not search yet).
-             * In "clarification_message", politely ask for the plan tier. 
-             * CRUCIAL EMPATHY: If the user mentioned a symptom (e.g., "다리가 부러짐", "골절"), acknowledge it first! (e.g., "다리가 부러지셨다니 많이 놀라셨겠어요. 정확한 보장 한도와 절차를 안내해 드리기 위해, 가입하신 플랜명(Premier, IHHP 등)을 먼저 알려주시겠어요?")
-           - IF PLAN IS KNOWN (from current message or past context):
-             * Set "needs_clarification" to false.
-             * Generate the "english_query" combining the symptom/question and the plan.
-
-        [CONVERSATION CONTEXT]
-        {context_str}
-
-        [CURRENT USER MESSAGE]
-        {question}
-
-        [STRICT JSON FORMAT]
-        {{
-          "language": "ko|en|ja|zh",
-          "plan_or_intent": "extracted plan or null",
-          "region": "extracted region or null",
-          "english_query": "search query or empty string if clarification needed",
-          "needs_clarification": true | false,
-          "clarification_message": "polite refusal/question or empty string"
-        }}
-        """
-
-        raw      = self.analyzer_llm.invoke(prompt).content
-        match    = re.search(r'\{.*\}', raw, re.DOTALL)
-        analysis = json.loads(match.group(0)) if match else {}
-        
-        new_val  = analysis.get('plan_or_intent')
-        prev_val = state.get('plan_or_intent')
-        final    = new_val if new_val and new_val != "None" else prev_val
-        
         return {
-            "normalized_query": analysis,
-            "plan_or_intent":   final,
-            "current_question": question,
-            "clarification_msg": analysis.get('clarification_message', ''),
+            "normalized_query":  analysis,
+            "plan_or_intent":    final_plan,
+            "known_treatment":   final_treatment,
+            "current_question":  question,
+            "clarification_msg": analysis.get("clarification_message", ""),
+            "slots":             analysis.get("extra", {}).get("slots", state.get("slots", {})),
+            "followup_count":    analysis.get("extra", {}).get("followup_count", state.get("followup_count", 0)),
+            "extra":             analysis.get("extra", {}),
         }
 
+    
     def retrieve_node(self, state: InsuranceState) -> dict:
-        query = state['normalized_query'].get('english_query', state['current_question'])[cite: 1]
-        plan = state.get('plan_or_intent') # 파싱된 플랜명
-
-        # 해당 플랜의 문서만 가져오도록 필터 락(Lock)을 겁니다.
-        search_filter = {"plan_tier": plan} if plan and plan != "None" else None[cite: 1]
-
+        query = state['normalized_query'].get('english_query') or state['current_question']
+        plan  = state.get('plan_or_intent')
+    
         docs = self.plugin.retrieve(
             query=query,
             normalized=state['normalized_query'],
             plan_or_intent=plan,
-            filter=search_filter  # 플러그인 내부 구현에 따라 필터 전달
+            extra=state.get('extra', {}),
         )
-
+    
         formatted = []
         for d in docs:
-            source_path = d.metadata.get('source', 'document_unknown.pdf')
-            file_name = Path(source_path).name
-            page_num = d.metadata.get('page', '?')
+            m = d.metadata
+            # 보험사별 파일명 키 통합
+            file_name = (
+                m.get('source_file')      # tricare
+                or m.get('file_name')     # cigna
+                or m.get('source', 'unknown.pdf')  # bupa, allianz
+            )
+            file_name = Path(file_name).name
+            page_num  = m.get('page', '?')
             formatted.append(f"[Source: {file_name} / Page: {page_num}] {d.page_content}")
-
+    
         return {"retrieved_docs": formatted}
 
     def generate_node(self, state: InsuranceState) -> dict:

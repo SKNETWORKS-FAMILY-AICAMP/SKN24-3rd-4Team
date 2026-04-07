@@ -1,27 +1,38 @@
 """
-Allianz 플러그인.
-vectordb/allianz/ 참조.
-Vector + BM25 + RRF + CrossEncoder 재랭킹.
+allianz_plugin.py
+Allianz 전용 플러그인 — slot 기반 분석 + Hybrid/RRF/Rerank 검색
+rag_utils.py의 함수들을 그대로 활용
 """
 import sys
-import numpy as np
 from pathlib import Path
-from typing import Optional, List, Dict, Any
-from langchain_chroma import Chroma
+from typing import Optional, List
+
 from langchain_core.documents import Document
-from rank_bm25 import BM25Okapi
-from sentence_transformers import CrossEncoder
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / 'src' / 'shared'))
-
+sys.path.insert(0, str(ROOT / 'src' / 'allianz'))
 from insurance_plugin import InsurancePlugin
-from shared_embedding import get_embedding_model
 
-ALLIANZ_PROMPT = """You are an Allianz Care insurance document-based assistant.
+from rag_utils import (
+    normalize_question,
+    extract_slots_llm,
+    merge_slots,
+    decide_missing_slots,
+    build_followup_question_llm,
+    retrieve_documents_from_slots,
+    looks_like_followup_answer,
+    KNOWN_PLANS,
+)
+
+RECOMMENDATION_KEYWORDS = [
+    "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
+    "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+]
+
+ALLIANZ_SYSTEM_PROMPT = """You are an Allianz Care insurance document-based assistant.
 
 Answer ONLY based on the provided context.
-Do not guess unsupported facts.
 
 [Allianz Care 플랜]
 - Care Base / Care Enhanced / Care Signature
@@ -44,111 +55,111 @@ Do not guess unsupported facts.
 - 문서에 없으면 "문서에 명시되지 않았습니다"라고 하세요.
 """
 
-DOC_TYPE_MAP = {
-    'coverage': ['benefit_guide', 'tob'],
-    'preauth':  ['benefit_guide', 'preauth_form', 'tob'],
-    'claim':    ['benefit_guide', 'claim_form'],
-}
-
 
 class AllianzPlugin(InsurancePlugin):
-
-    def __init__(self):
-        db_path = str(ROOT / 'vectordb' / 'allianz')
-        self._db = Chroma(
-            collection_name='allianz_care',
-            embedding_function=get_embedding_model(),
-            persist_directory=db_path
-        )
-        self._reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-
-        # BM25 인덱스
-        self._all_docs = self._load_all_docs()
-        if self._all_docs:
-            tokenized  = [d.page_content.lower().split() for d in self._all_docs]
-            self._bm25 = BM25Okapi(tokenized)
-        else:
-            print("⚠️  Allianz DB가 비어있음 → BM25 비활성화")
-            self._bm25 = None
-
-        print(f"✅ Allianz DB 로드: {self._db._collection.count()}개")
 
     @property
     def name(self) -> str:
         return "Allianz"
 
     @property
+    def plans(self) -> List[str]:
+        return ["Care Base", "Care Enhanced", "Care Signature"]
+
+    @property
     def system_prompt(self) -> str:
-        return ALLIANZ_PROMPT
+        return ALLIANZ_SYSTEM_PROMPT
 
-    def retrieve(self, query, normalized, plan_or_intent) -> List[Document]:
-        intent = normalized.get('intent', 'coverage')
-        region = normalized.get('region', 'none')
-        
-        # 1. 확장 쿼리 생성 (Source 11 로직 적용)
-        expanded_queries = self._make_expanded_queries(query, normalized)
-        
-        # 2. 필터 구성 (Global 문서 포함 전략)
-        search_filter = self._build_filter(intent, region)
-        
-        hybrid_pool = {} # 중복 방지 및 점수 합산용
-        
-        for q in expanded_queries:
-            # 3. Dense (Vector) 검색
-            dense_docs = self._db.similarity_search(q, k=10, filter=search_filter)
-            for rank, d in enumerate(dense_docs, 1):
-                self._update_pool(hybrid_pool, d, rank, 'dense')
-            
-            # 4. Sparse (BM25) 검색
-            if self._bm25:
-                bm25_res = self._bm25_search(q, k=10) # 필터가 적용된 BM25 필요
-                for rank, d in enumerate(bm25_res, 1):
-                    self._update_pool(hybrid_pool, d, rank, 'bm25')
+    def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
+        state = state or {}
 
-        # 5. RRF 점수 계산 + Rule-based 가중치 합산
-        scored_docs = []
-        for key, item in hybrid_pool.items():
-            doc = item['doc']
-            # RRF 점수 (60은 상수 k)
-            dense_score = 1 / (60 + item['dense_rank']) if item['dense_rank'] else 0
-            bm25_score = 1 / (60 + item['bm25_rank']) if item['bm25_rank'] else 0
-            
-            # 원본 로직의 규칙 점수 반영
-            rule_extra = self._calculate_rule_score(doc, intent, region)
-            
-            final_score = (0.65 * dense_score) + (0.35 * bm25_score) + rule_extra
-            scored_docs.append((doc, final_score))
+        # [PRIORITY 0] 추천 방어
+        if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
+            return {
+                "language": "ko",
+                "plan_or_intent": state.get("plan_or_intent"),
+                "known_treatment": state.get("known_treatment"),
+                "english_query": "",
+                "needs_clarification": True,
+                "clarification_message": (
+                    "보험 추천은 법적으로 제공이 불가하며, "
+                    "가입하신 플랜의 보장 내용만 안내 가능합니다."
+                ),
+                "extra": {},
+            }
 
-        # 6. 정렬 및 CrossEncoder 재랭킹
-        scored_docs.sort(key=lambda x: x[1], reverse=True)
-        top_candidates = [d for d, s in scored_docs[:15]]
-        
-        return self._final_rerank(query, top_candidates)
+        old_slots = state.get("slots", {})
+        is_followup = state.get("needs_clarification", False) or looks_like_followup_answer(question)
 
-    def _load_all_docs(self) -> List[Document]:
-        from langchain_core.documents import Document as LCDoc
-        result = self._db.get()
-        return [
-            LCDoc(page_content=c, metadata=m)
-            for c, m in zip(result['documents'], result['metadatas'])
-        ]
+        # 질문 정규화
+        normalized = normalize_question(question)
 
-    def _build_filter(self, intent: str, region: str) -> Optional[dict]:
-        allowed_types = DOC_TYPE_MAP.get(intent, ['benefit_guide', 'tob'])
-        filters = [{"doc_type": {"$in": allowed_types}}]
-        if region and region not in ('none', 'global', ''):
-            filters.append({"region": {"$in": [region, 'global']}})
-        return {"$and": filters} if len(filters) == 2 else filters[0]
+        # 슬롯 추출 + 병합
+        new_slots = extract_slots_llm(
+            question,
+            existing_slots=old_slots,
+            pending_followup=is_followup,
+            last_followup_question=state.get("clarification_message", ""),
+        )
+        merged_slots = merge_slots(old_slots, new_slots)
 
-    def _rrf_merge(self, doc_lists, k=60) -> List[Document]:
-        score_map: Dict[str, Dict] = {}
-        for docs in doc_lists:
-            for rank, doc in enumerate(docs):
-                key = doc.page_content[:100]
-                if key not in score_map:
-                    score_map[key] = {'score': 0.0, 'doc': doc}
-                score_map[key]['score'] += 1.0 / (rank + k)
-        return [
-            v['doc']
-            for v in sorted(score_map.values(), key=lambda x: x['score'], reverse=True)
-        ]
+        # plan 정규화 및 누적
+        plan = merged_slots.get("plan") or state.get("plan_or_intent")
+        if plan:
+            plan = KNOWN_PLANS.get(plan.lower(), plan)
+        merged_slots["plan"] = plan
+
+        # treatment 누적
+        known_treatment = (
+            merged_slots.get("injury_or_condition")
+            or state.get("known_treatment")
+        )
+
+        # missing slots 판단
+        intent = merged_slots.get("intent", normalized.get("intent", "coverage"))
+        missing_slots = decide_missing_slots(intent, merged_slots, question)
+
+        # followup 한도 초과 시 강제 검색
+        followup_count = state.get("followup_count", 0)
+        if followup_count >= state.get("max_followups", 2):
+            missing_slots = []
+
+        needs_clarification = bool(missing_slots)
+        clarification_message = ""
+        if needs_clarification:
+            clarification_message = build_followup_question_llm(
+                language=normalized.get("language", "ko"),
+                missing_slots=missing_slots,
+                intent=intent,
+                slots=merged_slots,
+            )
+
+        english_query = normalized.get("english_query", "") if not needs_clarification else ""
+
+        return {
+            "language":             normalized.get("language", "ko"),
+            "plan_or_intent":       plan,
+            "known_treatment":      known_treatment,
+            "english_query":        english_query,
+            "needs_clarification":  needs_clarification,
+            "clarification_message": clarification_message,
+            "extra": {
+                "slots":      merged_slots,
+                "normalized": normalized,
+                "followup_count": followup_count + (1 if needs_clarification else 0),
+            },
+        }
+
+    def retrieve(self, query: str, normalized: dict, plan_or_intent: Optional[str], **kwargs) -> List[Document]:
+        slots = kwargs.get("extra", {}).get("slots", {})
+        _normalized = kwargs.get("extra", {}).get("normalized", normalized)
+
+        if plan_or_intent:
+            slots["plan"] = plan_or_intent
+
+        docs, _ = retrieve_documents_from_slots(
+            question=query,
+            normalized=_normalized,
+            slots=slots,
+        )
+        return docs
