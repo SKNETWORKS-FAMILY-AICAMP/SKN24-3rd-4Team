@@ -27,17 +27,9 @@ from sentence_transformers import CrossEncoder
 
 load_dotenv()
 
-from pathlib import Path  # 없으면 추가
-BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Insurance_Benefit_Chatbot 루트
-
-#  상수 
-PERSIST_TEXT     = str(BASE_DIR / 'vectordb' / 'tricare_text')
-PERSIST_TABLE    = str(BASE_DIR / 'vectordb' / 'tricare_table')
-
-#  상수 
+#  상수
 PERSIST_TEXT     = './chroma_db'
 PERSIST_TABLE    = './chroma_db2'
-
 COLLECTION_TEXT  = 'tricare_rag'
 COLLECTION_TABLE = 'tricare_cost_tables'
 
@@ -67,15 +59,21 @@ SOURCE_URL_MAP = {
     "Health_Plan_Costs.csv":       "https://www.tricare.mil/Costs",
 }
 
+# [수정 1] 다국어 지원 추가 — zh-cn/zh-tw/fr/de/es 추가
 LANGUAGE_NAME_MAP = {
-    'ko': 'Korean',
-    'en': 'English',
-    'zh': 'Chinese',
-    'ja': 'Japanese',
+    'ko':    'Korean',
+    'en':    'English',
+    'zh':    'Chinese',
+    'zh-cn': 'Chinese',
+    'zh-tw': 'Chinese',
+    'ja':    'Japanese',
+    'fr':    'French',
+    'de':    'German',
+    'es':    'Spanish',
     'other': "the same language as the user's question",
 }
 
-#  전역 객체 (load_vector_stores() 호출 후 초기화됨) 
+#  전역 객체 (load_vector_stores() 호출 후 초기화됨)
 embedding_model    = None
 vector_store       = None
 table_vector_store = None
@@ -135,16 +133,33 @@ def load_vector_stores(device: str = 'cpu') -> None:
     print('✅ 로드 완료')
 
 
-#  유틸 함수 
+#  유틸 함수
+
+# [수정 2] detect_language — langdetect 폴백 추가 (프랑스어/독일어 등 라틴 계열 감지)
+try:
+    from langdetect import detect, LangDetectException
+    _langdetect_available = True
+except ImportError:
+    _langdetect_available = False
 
 def detect_language(text: str) -> str:
-    """유니코드 범위로 언어 감지"""
+    """
+    유니코드 범위로 한/중/일 판별 후 나머지는 langdetect로 감지.
+    langdetect 미설치 시 'en' 반환.
+    """
     if any('\u4e00' <= c <= '\u9fff' for c in text):
         return 'zh'
     if any('\u3040' <= c <= '\u30ff' for c in text):
         return 'ja'
     if any('\uac00' <= c <= '\ud7a3' for c in text):
         return 'ko'
+    # 프랑스어·독일어 등 라틴 계열은 langdetect로 판별
+    if _langdetect_available:
+        try:
+            lang = detect(text)
+            return lang if lang in LANGUAGE_NAME_MAP else 'en'
+        except LangDetectException:
+            return 'en'
     return 'en'
 
 
@@ -183,12 +198,12 @@ def normalize_question(question: str) -> dict:
         return {'intent': 'general', 'region': 'unknown', 'english_query': question}
 
 
-#  Hybrid + Rerank 검색 
+#  Hybrid + Rerank 검색
 
 def _hybrid_retrieve(question: str, bm25_ret, vec_ret,
                      bm25_weight: float = 0.4, vec_weight: float = 0.6,
                      k: int = 6) -> list:
-    """BM25 + MMR 결과를 RRF 방식으로 합산"""
+    """BM25 + 벡터 검색 결과를 RRF 방식으로 합산"""
     bm25_docs = bm25_ret.invoke(question)
     vec_docs  = vec_ret.invoke(question)
 
@@ -208,13 +223,15 @@ def _hybrid_retrieve(question: str, bm25_ret, vec_ret,
 
 def hybrid_retrieve_wide(question: str, k: int = 20) -> list:
     """
-    Rerank 전 단계: BM25+MMR으로 넓게 후보 수집.
+    Rerank 전 단계: BM25+similarity로 넓게 후보 수집.
     bm25_retriever 인덱스를 재사용해 속도 최적화.
     """
     bm25_retriever.k = k
+    # [수정 3] search_type 'mmr' → 'similarity'
+    # 후보 수집 단계는 다양성보다 recall이 목적이므로 similarity가 적합
     vec_wide = vector_store.as_retriever(
-        search_type='mmr',
-        search_kwargs={'k': k, 'fetch_k': 40}
+        search_type='similarity',
+        search_kwargs={'k': k}
     )
     result = _hybrid_retrieve(question, bm25_retriever, vec_wide, k=k)
     bm25_retriever.k = 6  # 기본값 복원
@@ -247,10 +264,16 @@ def search(question: str) -> list:
     list[Document]  상위 6개 문서
     """
     candidates = hybrid_retrieve_wide(question)
-    return rerank_docs(question, candidates, top_k=6)
+    docs = rerank_docs(question, candidates, top_k=6)
+    # [수정 4] 출처 일관성 보장 — 동일 질문이면 항상 같은 순서로 정렬
+    docs.sort(key=lambda d: (
+        d.metadata.get('source_file', d.metadata.get('source', '')),
+        d.metadata.get('page', 0)
+    ))
+    return docs
 
 
-#  RAG 체인 (단발성 질문용) 
+#  RAG 체인 (단발성 질문용)
 
 def make_rag_chain_v3(question: str, conversation_context: str = '') -> tuple:
     """
