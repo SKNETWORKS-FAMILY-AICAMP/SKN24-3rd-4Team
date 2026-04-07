@@ -63,9 +63,9 @@ class CignaPlugin(InsurancePlugin):
         from langchain_chroma import Chroma
         from rank_bm25 import BM25Okapi
 
-        db_path = str(ROOT / 'vectordb' / 'cigna')
+        db_path = str(ROOT / 'vectordb' / 'cigna' / 'chroma_baai_latest')
         self._db = Chroma(
-            collection_name='cigna_all',
+            collection_name='cigna_latest',
             embedding_function=get_embedding_model(),
             persist_directory=db_path,
         )

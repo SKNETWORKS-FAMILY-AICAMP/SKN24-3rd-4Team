@@ -28,7 +28,8 @@ from langchain_chroma import Chroma
 load_dotenv()
 
 # ── 경로 설정 ───────────────────────────────────────────────────
-BASE_DIR  = Path('.')
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 CIGNA_DIR = BASE_DIR / 'Cigna'
 
 CHROMA_LATEST_DIR = './chroma_baai_latest'

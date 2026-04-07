@@ -31,10 +31,10 @@ from sentence_transformers import CrossEncoder
 
 load_dotenv()
 
-# 상수 — tricare_core.py 기준 같은 폴더에서 chroma_db, chroma_db2를 찾음
-BASE_DIR      = Path(__file__).resolve().parent
-PERSIST_TEXT  = str(BASE_DIR / 'chroma_db')
-PERSIST_TABLE = str(BASE_DIR / 'chroma_db2')
+# 상수 — vectordb/tricare/ 폴더의 기존 DB를 읽어옴
+BASE_DIR      = Path(__file__).resolve().parent.parent.parent
+PERSIST_TEXT  = str(BASE_DIR / 'vectordb' / 'tricare' / 'chroma_db')
+PERSIST_TABLE = str(BASE_DIR / 'vectordb' / 'tricare' / 'chroma_db2')
 COLLECTION_TEXT  = 'tricare_rag'
 COLLECTION_TABLE = 'tricare_cost_tables'
 
