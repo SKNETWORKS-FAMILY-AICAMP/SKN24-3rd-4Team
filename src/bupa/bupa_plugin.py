@@ -20,6 +20,7 @@ from shared_embedding import get_embedding_model
 RECOMMENDATION_KEYWORDS = [
     "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
     "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
 ]
 
 BUPA_SYSTEM_PROMPT = """당신은 Bupa 국제 의료보험 전문 안내 어시스턴트입니다.
@@ -83,6 +84,8 @@ class BupaPlugin(InsurancePlugin):
 
     def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
         state = state or {}
+        followup_count = state.get("followup_count", 0)
+        max_followups  = state.get("max_followups", 2)
 
         # [PRIORITY 0] 추천 방어
         if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
@@ -101,40 +104,40 @@ class BupaPlugin(InsurancePlugin):
 
         prompt = f"""You are a Bupa insurance query analyzer.
 
-[ALREADY KNOWN FROM STATE - DO NOT RE-ASK]
-- known_plan: {state.get("plan_or_intent", "unknown")}
-- known_treatment: {state.get("known_treatment", "unknown")}
+        [ALREADY KNOWN FROM STATE - DO NOT RE-ASK]
+        - known_plan: {state.get("plan_or_intent", "unknown")}
+        - known_treatment: {state.get("known_treatment", "unknown")}
 
-[CONVERSATION CONTEXT]
-{context_str}
+        [CONVERSATION CONTEXT]
+        {context_str}
 
-[CURRENT USER MESSAGE]
-{question}
+        [CURRENT USER MESSAGE]
+        {question}
 
-[PLAN LIST] Elite / Premier / Select / MajorMedical / IHHP
-Extract plan even from casual Korean: "셀렉트야" → Select, "프리미어인데" → Premier
+        [PLAN LIST] Elite / Premier / Select / MajorMedical / IHHP
+        Extract plan even from casual Korean: "셀렉트야" → Select, "프리미어인데" → Premier
 
-[TREATMENT EXTRACTION]
-Use medical knowledge to interpret any natural language description.
-"다리 부러진 것 같아" → leg fracture, "숨쉬기 힘들어" → respiratory distress
+        [TREATMENT EXTRACTION]
+        Use medical knowledge to interpret any natural language description.
+        "다리 부러진 것 같아" → leg fracture, "숨쉬기 힘들어" → respiratory distress
 
-[SECTION TYPE] Pick one: benefit_table / exclusion / claim_process / pre_auth / general
+        [SECTION TYPE] Pick one: benefit_table / exclusion / claim_process / pre_auth / general
 
-[RULES]
-- If plan is still unknown → needs_clarification=true, ask ONLY for plan
-- If plan is known → needs_clarification=false, generate english_query
-- Never re-ask something already known
+        [RULES]
+        - If plan is still unknown → needs_clarification=true, ask ONLY for plan
+        - If plan is known → needs_clarification=false, generate english_query
+        - Never re-ask something already known
 
-Return STRICT JSON only:
-{{
-  "language": "ko|en|ja|zh",
-  "plan_or_intent": "plan name or null",
-  "known_treatment": "english medical term or null",
-  "section_type": "benefit_table|exclusion|claim_process|pre_auth|general",
-  "english_query": "search query or empty string",
-  "needs_clarification": true | false,
-  "clarification_message": "question or empty string"
-}}"""
+        Return STRICT JSON only:
+        {{
+          "language": "ko|en|ja|zh",
+          "plan_or_intent": "plan name or null",
+          "known_treatment": "english medical term or null",
+          "section_type": "benefit_table|exclusion|claim_process|pre_auth|general",
+          "english_query": "search query or empty string",
+          "needs_clarification": true | false,
+          "clarification_message": "question or empty string"
+        }}"""
 
         raw = self._analyzer_llm.invoke([HumanMessage(content=prompt)]).content
         match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -150,6 +153,11 @@ Return STRICT JSON only:
         new_treatment = analysis.get("known_treatment")
         treatment = new_treatment if new_treatment and new_treatment != "None" else state.get("known_treatment")
 
+        if followup_count >= max_followups:
+            analysis["needs_clarification"] = False
+            analysis["clarification_message"] = ""
+
+
         return {
             "language":             analysis.get("language", "ko"),
             "plan_or_intent":       plan,
@@ -157,7 +165,9 @@ Return STRICT JSON only:
             "english_query":        analysis.get("english_query", ""),
             "needs_clarification":  analysis.get("needs_clarification", False),
             "clarification_message": analysis.get("clarification_message", ""),
-            "extra": {"section_type": analysis.get("section_type", "benefit_table")},
+            "extra": {"section_type": analysis.get("section_type", "benefit_table"),
+                      "followup_count": followup_count + (1 if analysis.get("needs_clarification") else 0),
+                    },
         }
 
     def retrieve(self, query: str, normalized: dict, plan_or_intent: Optional[str], **kwargs) -> List[Document]:

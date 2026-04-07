@@ -28,6 +28,7 @@ from rag_utils import (
 RECOMMENDATION_KEYWORDS = [
     "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
     "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
 ]
 
 ALLIANZ_SYSTEM_PROMPT = """You are an Allianz Care insurance document-based assistant.

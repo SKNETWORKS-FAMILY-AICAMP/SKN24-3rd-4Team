@@ -28,6 +28,7 @@ from tricare_core import (
 RECOMMENDATION_KEYWORDS = [
     "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
     "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
 ]
 
 TRICARE_SYSTEM_PROMPT = """당신은 TRICARE 군인 의료보험 전문 안내 어시스턴트입니다.
@@ -91,6 +92,8 @@ class TriCarePlugin(InsurancePlugin):
 
     def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
         state = state or {}
+        followup_count = state.get("followup_count", 0)
+        max_followups  = state.get("max_followups", 2)
 
         # [PRIORITY 0] 추천 방어
         if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
@@ -112,46 +115,46 @@ class TriCarePlugin(InsurancePlugin):
 
         prompt = f"""You are a TRICARE insurance query analyzer.
 
-[ALREADY KNOWN FROM STATE - DO NOT RE-ASK]
-- known_plan: {known_plan or "unknown"}
-- known_region: {known_region or "unknown"}
-- known_treatment: {state.get("known_treatment", "unknown")}
-
-[CONVERSATION CONTEXT]
-{context_str}
-
-[CURRENT USER MESSAGE]
-{question}
-
-[PLAN LIST] Prime / Select / TFL / TOP / Reserve Select / Retired Reserve
-Extract plan from casual Korean too: "프라임이야" → Prime
-
-[REGION] CONUS / OCONUS / korea / unknown
-- "한국", "주한미군", "korea", "usfk" → korea
-- "해외", "overseas", "oconus" → OCONUS
-- "미국", "conus" → CONUS
-
-[INTENT] coverage / eligibility / cost / pharmacy / dental / overseas / general
-
-[TREATMENT EXTRACTION]
-Use medical knowledge to interpret natural language symptoms or injuries.
-
-[RULES]
-- TRICARE는 플랜보다 intent + region이 더 중요합니다
-- Plan unknown은 괜찮지만 intent는 반드시 추출
-- region이 overseas/cost 관련인데 unknown이면 needs_clarification=true
-
-Return STRICT JSON only:
-{{
-  "language": "ko|en|ja|zh",
-  "plan_or_intent": "plan name or null",
-  "known_treatment": "english medical term or null",
-  "intent": "coverage|eligibility|cost|pharmacy|dental|overseas|general",
-  "region": "CONUS|OCONUS|korea|unknown",
-  "english_query": "search query or empty string",
-  "needs_clarification": true | false,
-  "clarification_message": "question or empty string"
-}}"""
+        [ALREADY KNOWN FROM STATE - DO NOT RE-ASK]
+        - known_plan: {known_plan or "unknown"}
+        - known_region: {known_region or "unknown"}
+        - known_treatment: {state.get("known_treatment", "unknown")}
+        
+        [CONVERSATION CONTEXT]
+        {context_str}
+        
+        [CURRENT USER MESSAGE]
+        {question}
+        
+        [PLAN LIST] Prime / Select / TFL / TOP / Reserve Select / Retired Reserve
+        Extract plan from casual Korean too: "프라임이야" → Prime
+        
+        [REGION] CONUS / OCONUS / korea / unknown
+        - "한국", "주한미군", "korea", "usfk" → korea
+        - "해외", "overseas", "oconus" → OCONUS
+        - "미국", "conus" → CONUS
+        
+        [INTENT] coverage / eligibility / cost / pharmacy / dental / overseas / general
+        
+        [TREATMENT EXTRACTION]
+        Use medical knowledge to interpret natural language symptoms or injuries.
+        
+        [RULES]
+        - TRICARE는 플랜보다 intent + region이 더 중요합니다
+        - Plan unknown은 괜찮지만 intent는 반드시 추출
+        - region이 overseas/cost 관련인데 unknown이면 needs_clarification=true
+        
+        Return STRICT JSON only:
+        {{
+          "language": "ko|en|ja|zh",
+          "plan_or_intent": "plan name or null",
+          "known_treatment": "english medical term or null",
+          "intent": "coverage|eligibility|cost|pharmacy|dental|overseas|general",
+          "region": "CONUS|OCONUS|korea|unknown",
+          "english_query": "search query or empty string",
+          "needs_clarification": true | false,
+          "clarification_message": "question or empty string"
+        }}"""
 
         raw = self._analyzer_llm.invoke([HumanMessage(content=prompt)]).content
         match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -172,6 +175,11 @@ Return STRICT JSON only:
         if region == "unknown" and known_region:
             region = known_region
 
+        # followup 한도 초과 시 강제 검색
+        if followup_count >= max_followups:
+            analysis["needs_clarification"] = False
+            analysis["clarification_message"] = ""
+
         return {
             "language":             analysis.get("language", detect_language(question)),
             "plan_or_intent":       plan,
@@ -180,8 +188,9 @@ Return STRICT JSON only:
             "needs_clarification":  analysis.get("needs_clarification", False),
             "clarification_message": analysis.get("clarification_message", ""),
             "extra": {
-                "intent": analysis.get("intent", "general"),
-                "region": region,
+                "intent":  analysis.get("intent", "general"),
+                "region":  region,
+                "followup_count": followup_count + (1 if analysis.get("needs_clarification") else 0),
             },
         }
 

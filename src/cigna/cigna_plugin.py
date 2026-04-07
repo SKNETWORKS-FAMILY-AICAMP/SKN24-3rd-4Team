@@ -20,6 +20,7 @@ from shared_embedding import get_embedding_model
 RECOMMENDATION_KEYWORDS = [
     "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
     "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
 ]
 
 CIGNA_SYSTEM_PROMPT = """당신은 Cigna Global 국제 건강보험 전문 안내 어시스턴트입니다.
@@ -95,6 +96,8 @@ class CignaPlugin(InsurancePlugin):
 
     def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
         state = state or {}
+        followup_count = state.get("followup_count", 0)
+        max_followups  = state.get("max_followups", 2)
 
         # [PRIORITY 0] 추천 방어
         if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
@@ -169,6 +172,11 @@ Return STRICT JSON only:
         new_treatment = analysis.get("known_treatment")
         treatment = new_treatment if new_treatment and new_treatment != "None" else state.get("known_treatment")
 
+        if followup_count >= max_followups:
+            analysis["needs_clarification"] = False
+            analysis["clarification_message"] = ""
+
+
         return {
             "language":             analysis.get("language", "ko"),
             "plan_or_intent":       plan,
@@ -179,6 +187,7 @@ Return STRICT JSON only:
             "extra": {
                 "difficulty":    analysis.get("difficulty", "medium"),
                 "missing_info":  analysis.get("missing_info", []),
+                "followup_count": followup_count + (1 if analysis.get("needs_clarification") else 0),
             },
         }
 
