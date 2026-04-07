@@ -33,6 +33,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Insurance_Benefit_Ch
 #  상수 
 PERSIST_TEXT     = str(BASE_DIR / 'vectordb' / 'tricare_text')
 PERSIST_TABLE    = str(BASE_DIR / 'vectordb' / 'tricare_table')
+
+#  상수 
+PERSIST_TEXT     = './chroma_db'
+PERSIST_TABLE    = './chroma_db2'
+
 COLLECTION_TEXT  = 'tricare_rag'
 COLLECTION_TABLE = 'tricare_cost_tables'
 
