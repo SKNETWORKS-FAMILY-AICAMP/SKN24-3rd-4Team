@@ -3,8 +3,4 @@ __pycache__/
 .DS_Store
 src/.DS_Store
 vectordb/.DS_Store
-<<<<<<< HEAD
-# chroma.sqlite3
-=======
 .vscode
->>>>>>> 482452e6f79b6b4f0afe7f254f1fbe528b0495cf
