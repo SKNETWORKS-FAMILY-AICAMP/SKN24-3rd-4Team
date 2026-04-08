@@ -28,8 +28,10 @@ from sentence_transformers import CrossEncoder
 load_dotenv()
 
 #  상수
-PERSIST_TEXT     = './chroma_db'
-PERSIST_TABLE    = './chroma_db2'
+from pathlib import Path as _Path
+_TRICARE_ROOT = _Path(__file__).resolve().parent.parent.parent  # src/tricare → root
+PERSIST_TEXT  = str(_TRICARE_ROOT / 'vectordb' / 'tricare' / 'chroma_db')
+PERSIST_TABLE = str(_TRICARE_ROOT / 'vectordb' / 'tricare' / 'chroma_db2')
 COLLECTION_TEXT  = 'tricare_rag'
 COLLECTION_TABLE = 'tricare_cost_tables'
 
@@ -93,6 +95,9 @@ def load_vector_stores(device: str = 'cpu') -> None:
     ----------
     device : 'cpu' or 'cuda'
     """
+    for p in [PERSIST_TEXT, PERSIST_TABLE]:
+        assert _Path(p).exists(), f"❌ TRICARE DB 없음: {p} — 전처리 후 임베딩을 먼저 실행하세요."
+        
     global embedding_model, vector_store, table_vector_store
     global bm25_retriever, reranker, model, _norm_model, _all_text_chunks
 

@@ -61,9 +61,10 @@ class BupaPlugin(InsurancePlugin):
 
     def __init__(self):
         from langchain_chroma import Chroma
-        db_path = str(ROOT / 'vectordb' / 'bupa')
+        db_path = str(ROOT / 'vectordb' / 'bupa' / 'bupa_latest')
+        assert Path(db_path).exists(), f"❌ Bupa DB 없음: {db_path} — 전처리 후 임베딩을 먼저 실행하세요."
         self._db = Chroma(
-            collection_name='bupa_preprocessed',
+            collection_name='bupa_latest',
             embedding_function=get_embedding_model(),
             persist_directory=db_path,
         )

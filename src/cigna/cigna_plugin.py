@@ -63,12 +63,15 @@ class CignaPlugin(InsurancePlugin):
         from langchain_chroma import Chroma
         from rank_bm25 import BM25Okapi
 
-        db_path = str(ROOT / 'vectordb' / 'cigna')
+# ✅ 최종
+        db_path = str(ROOT / 'vectordb' / 'cigna' / 'chroma_baai_latest')
+        assert Path(db_path).exists(), f"❌ Cigna DB 없음: {db_path} — 전처리 후 임베딩을 먼저 실행하세요."
         self._db = Chroma(
-            collection_name='cigna_all',
+            collection_name='cigna_latest',
             embedding_function=get_embedding_model(),
             persist_directory=db_path,
         )
+        
         self._analyzer_llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
         self._llm = ChatOpenAI(model='gpt-4o-mini', temperature=0)
 
