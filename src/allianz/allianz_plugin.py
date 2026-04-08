@@ -25,12 +25,6 @@ from rag_utils import (
     KNOWN_PLANS,
 )
 
-RECOMMENDATION_KEYWORDS = [
-    "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
-    "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
-    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
-]
-
 ALLIANZ_SYSTEM_PROMPT = """You are an Allianz Care insurance document-based assistant.
 
 Answer ONLY based on the provided context.
@@ -76,21 +70,6 @@ class AllianzPlugin(InsurancePlugin):
 
     def analyze(self, question: str, context_str: str, state: dict = None) -> dict:
         state = state or {}
-
-        # [PRIORITY 0] 추천 방어
-        if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
-            return {
-                "language": "ko",
-                "plan_or_intent": state.get("plan_or_intent"),
-                "known_treatment": state.get("known_treatment"),
-                "english_query": "",
-                "needs_clarification": True,
-                "clarification_message": (
-                    "보험 추천은 법적으로 제공이 불가하며, "
-                    "가입하신 플랜의 보장 내용만 안내 가능합니다."
-                ),
-                "extra": {},
-            }
 
         # [PRIORITY 1] 슬롯 추출 및 누적
         old_slots = state.get("slots", {})

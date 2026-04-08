@@ -68,3 +68,35 @@ class InsurancePlugin(ABC):
     - Each clarification must feel like a natural conversation, not a form
     - clarification_message MUST be in the SAME language as the user message
     """
+    import re
+
+    PII_PATTERNS = [
+        r'\b\d{6}[-]\d{7}\b',          # 주민번호
+        r'\b[A-Z]{1,2}\d{7,9}\b',      # 여권번호
+        r'\b\d{13}\b',                  # 외국인등록번호
+        r'\b\d{4}[-]\d{2}[-]\d{2}\b',  # 생년월일
+    ]
+    
+    PII_KEYWORDS = [
+        "주민번호", "주민등록번호", "여권번호", "외국인등록번호",
+        "social security", "ssn", "passport number", "date of birth",
+        "insurance id", "member id", "policy number",
+    ]
+    
+    RECOMMENDATION_KEYWORDS = [
+        "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
+        "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
+        "더 나은", "뭐가 더", "어떤게 더",
+    ]
+    
+    @staticmethod
+    def check_blocked(question: str) -> Optional[str]:
+        """추천/PII 감지. 차단 이유 반환, 없으면 None"""
+        q_lower = question.lower()
+        if any(kw in q_lower for kw in InsurancePlugin.RECOMMENDATION_KEYWORDS):
+            return "recommendation"
+        if any(kw in q_lower for kw in InsurancePlugin.PII_KEYWORDS):
+            return "pii"
+        if any(re.search(p, question) for p in InsurancePlugin.PII_PATTERNS):
+            return "pii"
+        return None

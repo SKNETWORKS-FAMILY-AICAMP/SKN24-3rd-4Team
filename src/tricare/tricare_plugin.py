@@ -101,21 +101,6 @@ class TriCarePlugin(InsurancePlugin):
         followup_count = state.get("followup_count", 0)
         max_followups  = state.get("max_followups", 2)
 
-        # [PRIORITY 0] 추천 방어
-        if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
-            return {
-                "language": "ko",
-                "plan_or_intent": state.get("plan_or_intent"),
-                "known_treatment": state.get("known_treatment"),
-                "english_query": "",
-                "needs_clarification": True,
-                "clarification_message": (
-                    "보험 추천은 법적으로 제공이 불가하며, "
-                    "가입하신 플랜의 보장 내용만 안내 가능합니다."
-                ),
-                "extra": {},
-            }
-
         known_plan   = state.get("plan_or_intent")
         known_region = state.get("extra", {}).get("region")
 
@@ -149,6 +134,9 @@ class TriCarePlugin(InsurancePlugin):
         - TRICARE는 플랜보다 intent + region이 더 중요합니다
         - Plan unknown은 괜찮지만 intent는 반드시 추출
         - region이 overseas/cost 관련인데 unknown이면 needs_clarification=true
+        - If user message contains any personally identifiable information 
+          (passport number, ID number, date of birth, insurance ID, etc.)
+          in ANY language → needs_clarification=true, block_reason=pii
         
         Return STRICT JSON only:
         {{

@@ -38,6 +38,22 @@ class InsuranceRAGGraph:
     def analyze_node(self, state: InsuranceState) -> dict:
         messages = state['messages']
         question = messages[-1].content
+        block_reason = InsurancePlugin.check_blocked(question)
+        if block_reason:
+            return {
+                "normalized_query": {
+                    "language": "ko",
+                    "needs_clarification": True,
+                    "clarification_message": "",
+                },
+                "plan_or_intent":   state.get("plan_or_intent"),
+                "known_treatment":  state.get("known_treatment"),
+                "current_question": question,
+                "clarification_msg": "",
+                "extra": {"blocked": True, "block_reason": block_reason},
+                "slots": state.get("slots", {}),
+                "followup_count": state.get("followup_count", 0),
+            }
 
         history = []
         for m in messages[:-1]:
@@ -147,8 +163,29 @@ class InsuranceRAGGraph:
     
     def clarify_node(self, state: InsuranceState) -> dict:
         from langchain_core.messages import AIMessage
-        return {"messages": [AIMessage(content=state['clarification_msg'])]}
     
+        block_reason = state.get("extra", {}).get("block_reason")
+        question = state.get("current_question", "")
+    
+        if block_reason == "recommendation":
+            msg = f"""User said: "{question}"
+            Respond in the same language as the user that insurance recommendations 
+            cannot be provided by law, and you can only guide on enrolled plan coverage.
+            Keep it short and polite."""
+    
+        elif block_reason == "pii":
+            msg = f"""User said: "{question}"
+            Respond in the same language as the user that you cannot process 
+            personal identifying information, and ask them to describe their 
+            situation in general terms instead.
+            Keep it short and polite."""
+    
+        else:
+            return {"messages": [AIMessage(content=state['clarification_msg'])]}
+    
+        response = self.chat_llm.invoke([HumanMessage(content=msg)])
+        return {"messages": [AIMessage(content=response.content)]}
+        
     def route_after_analyze(self, state: InsuranceState) -> str:
             analysis = state.get('normalized_query', {})
             

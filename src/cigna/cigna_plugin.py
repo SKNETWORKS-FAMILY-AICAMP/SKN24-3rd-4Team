@@ -17,13 +17,8 @@ sys.path.insert(0, str(ROOT / 'src' / 'shared'))
 from insurance_plugin import InsurancePlugin
 from shared_embedding import get_embedding_model
 
-RECOMMENDATION_KEYWORDS = [
-    "추천", "어떤게 좋아", "뭐가 나아", "골라줘", "비교해줘",
-    "recommend", "which is better", "어떤 플랜이 좋", "뭐가 더 좋",
-    "더 나은", "뭐가 더", "어떤게 더",  # ← 추가
-]
 
-CIGNA_SYSTEM_PROMPT = """당신은 Cigna Global 국제 건강보험 전문 안내 어시스턴트입니다.
+CIGNA_SYSTEM_PROMPT = """You are a Cigna Global international health insurance assistant.
 
 [CLARIFICATION MESSAGE STYLE - CRITICAL]
 - If user says they don't know or can't remember:
@@ -105,21 +100,6 @@ class CignaPlugin(InsurancePlugin):
         followup_count = state.get("followup_count", 0)
         max_followups  = state.get("max_followups", 2)
 
-        # [PRIORITY 0] 추천 방어
-        if any(kw in question.lower() for kw in RECOMMENDATION_KEYWORDS):
-            return {
-                "language": "ko",
-                "plan_or_intent": state.get("plan_or_intent"),
-                "known_treatment": state.get("known_treatment"),
-                "english_query": "",
-                "needs_clarification": True,
-                "clarification_message": (
-                    "보험 추천은 법적으로 제공이 불가하며, "
-                    "가입하신 플랜의 보장 내용만 안내 가능합니다."
-                ),
-                "extra": {},
-            }
-
         # 계산 질문 + 플랜/수치 미제공 → missing_info 처리
         is_calc = any(kw in question for kw in CALCULATION_KEYWORDS)
         known_plan = state.get("plan_or_intent")
@@ -151,6 +131,9 @@ Use medical knowledge to interpret any natural language description of symptoms 
 - If plan unknown → needs_clarification=true, ask ONLY for plan
 - If plan known → needs_clarification=false, generate english_query
 - Never re-ask something already known
+- If user message contains any personally identifiable information 
+  (passport number, ID number, date of birth, insurance ID, etc.)
+  in ANY language → needs_clarification=true, block_reason=pii
 
 Return STRICT JSON only:
 {{
