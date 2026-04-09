@@ -299,19 +299,53 @@ def load_cases(path: str | Path) -> List[EvalCase]:
     return cases
 
 
-def build_messages(case: EvalCase) -> List[Dict[str, str]]:
+def build_messages(case: EvalCase, model: str) -> List[Dict[str, str]]:
+    is_gemma = "gemma" in (model or "").lower()
+
+    # gemma 계열: system role을 직접 넣지 않고 첫 user에 합침
+    if is_gemma:
+        messages: List[Dict[str, str]] = []
+        merged_system = SYSTEM_PROMPT.strip()
+
+        for msg in case.messages:
+            role = msg["role"]
+            content = msg["content"]
+
+            if role not in {"user", "assistant", "system"}:
+                raise ValueError(f"Unsupported role: {role}")
+
+            # placeholder assistant는 제외
+            if role == "assistant" and "모델 응답 자리" in content:
+                continue
+
+            # case 내부 system도 같이 병합
+            if role == "system":
+                merged_system += "\n\n" + content.strip()
+                continue
+
+            # 첫 user 메시지에 system 프롬프트 prepend
+            if role == "user" and not messages:
+                content = merged_system + "\n\n" + content
+
+            messages.append({"role": role, "content": content})
+
+        # user 메시지가 하나도 없으면 최소 1개 생성
+        if not messages:
+            messages.append({"role": "user", "content": merged_system})
+
+        return messages
+
+    # 그 외 모델: 기존 방식 유지
     messages: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in case.messages:
         role = msg["role"]
         content = msg["content"]
         if role not in {"user", "assistant", "system"}:
             raise ValueError(f"Unsupported role: {role}")
-        # Placeholder assistant messages are skipped to prevent leakage
         if role == "assistant" and "모델 응답 자리" in content:
             continue
         messages.append({"role": role, "content": content})
     return messages
-
 
 def call_model(
     client: OpenAI,
