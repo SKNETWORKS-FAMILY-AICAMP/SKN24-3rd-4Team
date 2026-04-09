@@ -453,19 +453,20 @@ Cigna Global 공식 홈페이지(cignaglobal.com)에서 직접 수집
 
 # 4. 시스템 아키텍처
 
-![image.png](attachment:1934226c-38f8-49bb-83d8-e58b95b53b23:image.png)
+<img width="3884" height="2648" alt="8" src="https://github.com/user-attachments/assets/10713517-0fd1-4b3b-a414-01032f6c9dd9" />
 
 ---
 
 # 5. WBS
 
-![image.png](attachment:4616cc54-8df3-4352-b241-a49531494bfe:image.png)
+<img width="944" height="585" alt="9" src="https://github.com/user-attachments/assets/0646bbb1-2e84-43d7-8893-024234e40936" />
+
 
 # 6. 요구사항 명세서
 
 ---
 
-![image.png](attachment:c593e341-0e17-41ab-a046-3be03b0b2191:image.png)
+<img width="1227" height="522" alt="10" src="https://github.com/user-attachments/assets/dd77cea4-4285-4135-b7e4-139d479f10a0" />
 
 ---
 
@@ -492,7 +493,8 @@ Csv 파일 4건 | 10개 / 4 / 604 chunk |
 
 ### 7-2-1. CIGNA
 
-![스크린샷 2026-04-06 16.03.51.png](attachment:868aa323-c82e-4fbb-a8ca-90b40a352469:c92adde1-45f3-4c81-8694-08643b3c61b9.png)
+<img width="964" height="1366" alt="11" src="https://github.com/user-attachments/assets/866bc6af-c08f-4b32-857d-cfdaf893eb2e" />
+
 
 ### 문제 사항
 
@@ -518,11 +520,13 @@ ECNARUSNI LACIDEM | Hospital accommodation | Updated | ...
 
 ### **After — `_table_to_md()` 출력**
 
-![image.png](attachment:deb37c19-fa9d-48d4-a3f9-c73e8567cf3e:image.png)
+<img width="982" height="628" alt="12" src="https://github.com/user-attachments/assets/8561f2cc-de77-41a5-af0e-59e97bdeeb1b" />
+
 
 ### 7-2-2. ALLIANZ
 
-![스크린샷 2026-04-06 110854.png](attachment:bd0f57b9-364d-43d7-b46e-1dd92115ef42:스크린샷_2026-04-06_110854.png)
+<img width="1913" height="681" alt="13" src="https://github.com/user-attachments/assets/cfad8a63-37c1-4711-9929-28adddc2f74e" />
+
 
 ### 문제 사항
 
@@ -537,7 +541,8 @@ ECNARUSNI LACIDEM | Hospital accommodation | Updated | ...
 
 ### 7-2-4. TRICARE
 
-![image.png](attachment:7450e9b1-648e-4c8c-9e1b-dbab507a580f:image.png)
+<img width="2204" height="644" alt="14" src="https://github.com/user-attachments/assets/0ef1bd42-234e-4ca5-9122-2821c719e0f3" />
+
 
 ### 문제 사항
 
@@ -616,11 +621,13 @@ https://github.com/SKN24-3rd-4Team/Insurance_Benefit_Chatbot/tree/main/src/embed
 
 ### 9-2. Allianz 데이터셋 평가 결과
 
-![질문 데이터셋](attachment:f8b23374-5951-4137-ad00-eef56b047f3a:image.png)
+<img width="1162" height="665" alt="15" src="https://github.com/user-attachments/assets/db34a854-6857-4e0e-9197-ed71809b4660" />
+
 
 질문 데이터셋
 
-![결과](attachment:ff907ea0-2f3c-46f6-9d1a-416773f50d0a:image.png)
+<img width="1783" height="532" alt="16" src="https://github.com/user-attachments/assets/eb8223b0-3d7a-49c3-ac38-732f6ccfb9ad" />
+
 
 결과
 
@@ -641,8 +648,9 @@ https://github.com/SKN24-3rd-4Team/Insurance_Benefit_Chatbot/tree/main/src/embed
 ### 9-2.  Tricare 데이터셋 평가 결과
 
 - 진행 이미지
-    
-    ![image.png](attachment:4879ab4d-a179-44c2-ba1e-03c5435dbe78:image.png)
+
+<img width="2880" height="1704" alt="22" src="https://github.com/user-attachments/assets/63459cdc-b662-411d-a5f7-8dd4f0ffb4a4" />
+
     
 - eval 질문
     
@@ -788,14 +796,16 @@ https://github.com/SKN24-3rd-4Team/Insurance_Benefit_Chatbot/tree/main/src/embed
 
 **Before**
 
-![image.png](attachment:f72d93d2-cb1f-4f17-8509-4256f8d3ae3d:05cc4ad4-2b3d-40aa-b5b9-7d72d39ee599.png)
+  <img width="639" height="156" alt="17" src="https://github.com/user-attachments/assets/27100017-6f1c-4677-ad18-133b1e7e5c24" />  
+
 
 `User: Is mental health treatment covered?
 Bot:  정신건강 치료는 보장됩니다...  ← 한국어 고정`
 
 **After**
 
-![image.png](attachment:3e405e3a-39a7-4589-b49f-4880d15fcf19:image.png)
+<img width="1802" height="345" alt="18" src="https://github.com/user-attachments/assets/385a636a-deb4-49aa-b9f1-c2f286892840" />
+
 
 `User: Is mental health treatment covered?
 Bot:  Mental health treatment is covered...  ← 질문 언어 일치`
@@ -823,7 +833,7 @@ Bot:  개인 식별 정보는 처리할 수 없습니다.
 
 ### 개인식별정보 수집 안함
 
-![스크린샷 2026-04-08 15.29.14.png](attachment:2ea95e77-d27b-4b95-92ae-773bdf11053b:스크린샷_2026-04-08_15.29.14.png)
+<img width="1039" height="397" alt="19" src="https://github.com/user-attachments/assets/707ba25e-ba3a-4d81-b72e-3ff2a67aea3b" />
 
 - 해석.
     
