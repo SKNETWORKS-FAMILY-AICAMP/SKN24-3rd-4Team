@@ -417,19 +417,17 @@ Cigna Global 공식 홈페이지(cignaglobal.com)에서 직접 수집
 
 # 3. 기술 스택 & 사용한 모델 (임베딩 모델, LLM)
 
-| 카테고리 | 기술 스택 | 스택 뱃지 이미지 (깃허브 마크다운용) |
-| --- | --- | --- |
-| 사용 언어 | python | ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=Python&logoColor=white) |
-| 임베딩 모델 | https://huggingface.co/BAAI/bge-m3 | ![bge-m3](https://img.shields.io/badge/BAAI-bge--m3-FF6F00?style=for-the-badge&logo=huggingface&logoColor=white) |
-| 벡터 DB | chromaDB | ![ChromaDB](https://img.shields.io/badge/ChromaDB-5A0FC8?style=for-the-badge&logo=databricks&logoColor=white) |
-| LLM | gpt-4.1-mini | ![GPT-4.1-mini](https://img.shields.io/badge/OpenAI-GPT--4.1--mini-412991?style=for-the-badge&logo=openai&logoColor=white) |
-| 프레임워크 | LangChain, LangGraph | ![LangChain](https://img.shields.io/badge/LangChain-005F73?style=for-the-badge&logo=chainlink&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LangGraph-0A9396?style=for-the-badge&logo=graph&logoColor=white) |
-| 인터페이스(UI) | Streamlit | ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white) |
-| 관리 및 협업 | git, github, Notion | ![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
-![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)
-![Notion](https://img.shields.io/badge/Notion-000000?style=for-the-badge&logo=notion&logoColor=white) |
+## 🛠 Tech Stack
 
+| Category | Stack |
+|---|---|
+| Language | ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white) |
+| Embedding | ![HuggingFace](https://img.shields.io/badge/BAAI/bge--m3-FFD21E?style=flat&logo=huggingface&logoColor=black) |
+| Vector DB | ![ChromaDB](https://img.shields.io/badge/ChromaDB-FF6B35?style=flat) |
+| LLM | ![OpenAI](https://img.shields.io/badge/GPT--4.1--mini-412991?style=flat&logo=openai&logoColor=white) |
+| Framework | ![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat&logo=langchain&logoColor=white) ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?style=flat&logo=langchain&logoColor=white) |
+| UI | ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white) |
+| Collaboration | ![Git](https://img.shields.io/badge/Git-F05032?style=flat&logo=git&logoColor=white) ![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white) ![Notion](https://img.shields.io/badge/Notion-000000?style=flat&logo=notion&logoColor=white) |
 ## 3-1. 모델 선정 이유
 
 1. 임베딩 모델 (Embedding Model)
