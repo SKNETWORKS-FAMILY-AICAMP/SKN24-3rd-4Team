@@ -856,7 +856,8 @@ Bot:  개인 식별 정보는 처리할 수 없습니다.
 
 ### 면책고지 제거 방어 (위에서 플랜 정보 줘서 정부 부족은 해결함)
 
-![image.png](attachment:b520fca6-d075-4089-a3dd-7be4e2b5fd29:image.png)
+<img width="1059" height="568" alt="23" src="https://github.com/user-attachments/assets/177d39eb-7284-4004-b68d-b36a8ec27504" />
+
 
 - 해석
     
