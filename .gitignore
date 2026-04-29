@@ -4,3 +4,31 @@ __pycache__/
 src/.DS_Store
 vectordb/.DS_Store
 .vscode
+# Python & Django
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# Virtual Environment
+venv/
+.env/
+*.env
+
+# VSCode or PyCharm 설정
+.vscode/
+.idea/
+
+# Static & Media
+# static/
+media/
+
+# OS 관련
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+.env

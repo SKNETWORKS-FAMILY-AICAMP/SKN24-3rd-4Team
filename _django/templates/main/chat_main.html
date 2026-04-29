@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+</head>
+<body>
+    <h1>Chat 목록</h1>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>타입</th>
+                <th>내용</th>
+                <th>작성일</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for chat in chats %}
+            <tr>
+                <td>{{ chat.id }}</td>
+                <td>{{ chat.type }}</td>
+                <td>{{ chat.content }}</td>
+                <td>{{ chat.created_at }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <h1>Chat 등록</h1>
+    <form method="post" action="{% url 'send_chat' %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">저장</button>
+    </form>
+</body>
+</html>
